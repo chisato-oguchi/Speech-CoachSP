@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>AI面接練習レコーダー</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="[https://cdn.tailwindcss.com](https://cdn.tailwindcss.com)"></script>
+  <!-- React & ReactDOM -->
+  <script src="[https://unpkg.com/react@18/umd/react.production.min.js](https://unpkg.com/react@18/umd/react.production.min.js)" crossorigin></script>
+  <script src="[https://unpkg.com/react-dom@18/umd/react-dom.production.min.js](https://unpkg.com/react-dom@18/umd/react-dom.production.min.js)" crossorigin></script>
+  <!-- Babel -->
+  <script src="[https://unpkg.com/@babel/standalone/babel.min.js](https://unpkg.com/@babel/standalone/babel.min.js)"></script>
+  
+  <!-- Google Material Icons -->
+  <link href="[https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined](https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined)" rel="stylesheet" />
+
+  <style>
+    body { margin: 0; padding: 0; overflow-x: hidden; }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-radius: 10px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 10px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
+    @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes fade-in-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes fall {
+      0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; }
+      100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
+    }
+    .animate-fade-in { animation: fade-in 0.5s ease-out forwards; }
+    .animate-fade-in-up { animation: fade-in-up 0.5s ease-out forwards; }
+    .animate-fall { animation-name: fall; animation-timing-function: linear; animation-iteration-count: infinite; }
+    
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+  </style>
+</head>
+<body class="bg-slate-900 text-white min-h-screen">
+  
+  <div id="root"></div>
+
+  <script type="text/babel" data-presets="react,env">
+    const { useState, useRef, useEffect } = React;
+
+    class ErrorBoundary extends React.Component {
+      constructor(props) {
+        super(props);
+        this.state = { hasError: false, error: null };
+      }
+      static getDerivedStateFromError(error) {
+        return { hasError: true, error };
+      }
+      render() {
+        if (this.state.hasError) {
+          return (
+            <div style={{ padding: '2rem', color: '#ffaaaa', textAlign: 'center' }}>
+              <h2 style={{ fontSize: '1.5rem', marginBottom: '1rem' }}>アプリの読み込みに失敗しました</h2>
+              <p style={{ background: 'rgba(0,0,0,0.5)', padding: '1rem', borderRadius: '8px' }}>
+                {this.state.error.toString()}
+              </p>
+            </div>
+          );
+        }
+        return this.props.children;
+      }
+    }
+
+    const Icon = ({ name, size = 24, className = '', fill }) => (
+      <span 
+        className={`material-symbols-outlined ${className}`} 
+        style={{ fontSize: size, color: fill === 'currentColor' ? 'inherit' : fill }}
+      >
+        {name}
+      </span>
+    );
+
+    const Mic2 = (p) => <Icon name="mic" {...p}/>;
+    const User = (p) => <Icon name="person" {...p}/>;
+    const Award = (p) => <Icon name="emoji_events" {...p}/>;
+    const FileText = (p) => <Icon name="description" {...p}/>;
+    const Activity = (p) => <Icon name="graphic_eq" {...p}/>;
+    const ChevronRight = (p) => <Icon name="chevron_right" {...p}/>;
+    const Circle = (p) => <Icon name="circle" {...p}/>;
+    const Square = (p) => <Icon name="stop" {...p}/>;
+    const Trash2 = (p) => <Icon name="delete" {...p}/>;
+    const Pause = (p) => <Icon name="pause" {...p}/>;
+    const Play = (p) => <Icon name="play_arrow" {...p}/>;
+    const Download = (p) => <Icon name="download" {...p}/>;
+    const Loader2 = (p) => <Icon ${p.className||''}`} className="{`animate-spin" name="autorenew" {...p}/>;
+    const Sparkles = (p) => <Icon name="auto_awesome" {...p}/>;
+    const CheckCircle = (p) => <Icon name="check_circle" {...p}/>;
+
+    function VoiceRecorder() {
+      const [micGranted, setMicGranted] = useState(false);
+      const [className, setClassName] = useState('');
+      const [userName, setUserName] = useState('');
+      const [isSetupComplete, setIsSetupComplete] = useState(false);
+
+      const [isRecording, setIsRecording] = useState(false);
+      const [audioBlob, setAudioBlob] = useState(null);
+      const [audioUrl, setAudioUrl] = useState(null);
+      const [mimeType, setMimeType] = useState('');
+      const [isPlaying, setIsPlaying] = useState(false);
+      const [displayStatus, setDisplayStatus] = useState('idle');
+      const [currentTime, setCurrentTime] = useState(0);
+      const [duration, setDuration] = useState(0);
+
+      const [history, setHistory] = useState([]);
+      const [isAnalyzing, setIsAnalyzing] = useState(false);
+      const [displayAiResult, setDisplayAiResult] = useState(null);
+      const [isHistoryView, setIsHistoryView] = useState(false);
+      const [historyViewId, setHistoryViewId] = useState(null);
+      const [reportView, setReportView] = useState('summary');
+
+      const mediaRecorderRef = useRef(null);
+      const audioChunksRef = useRef([]);
+      const audioRef = useRef(new Audio());
+
+      const currentChallengeNum = history.length + 1;
+
+      const requestMicAccess = async () => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          stream.getTracks().forEach(track => track.stop());
+          setMicGranted(true);
+        } catch (err) {
+          alert("マイクのアクセスが拒否されました。設定から許可してください。");
+        }
+      };
+
+      const handleSetupSubmit = (e) => {
+        e.preventDefault();
+        if (className.trim() && userName.trim()) {
+          setIsSetupComplete(true);
+        }
+      };
+
+      useEffect(() => {
+        const audio = audioRef.current;
+        const updateTime = () => setCurrentTime(audio.currentTime);
+        const updateDuration = () => setDuration(audio.duration);
+        const handleEnded = () => {
+          setIsPlaying(false);
+          setDisplayStatus('recorded');
+          setCurrentTime(0);
+        };
+
+        audio.addEventListener('timeupdate', updateTime);
+        audio.addEventListener('loadedmetadata', updateDuration);
+        audio.addEventListener('ended', handleEnded);
+
+        return () => {
+          audio.removeEventListener('timeupdate', updateTime);
+          audio.removeEventListener('loadedmetadata', updateDuration);
+          audio.removeEventListener('ended', handleEnded);
+          audio.pause();
+        };
+      }, []);
+
+      const togglePlay = () => {
+        if (!audioUrl) return;
+        const audio = audioRef.current;
+        
+        if (isPlaying) {
+          audio.pause();
+          setIsPlaying(false);
+          setDisplayStatus('paused');
+        } else {
+          if (audio.src !== audioUrl) {
+            audio.src = audioUrl;
+          }
+          audio.play().catch(e => console.error("Playback failed:", e));
+          setIsPlaying(true);
+          setDisplayStatus('playing');
+        }
+      };
+
+      const startRecording = async () => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const mediaRecorder = new MediaRecorder(stream);
+          mediaRecorderRef.current = mediaRecorder;
+          audioChunksRef.current = [];
+          setMimeType(mediaRecorder.mimeType);
+
+          mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+              audioChunksRef.current.push(event.data);
+            }
+          };
+
+          mediaRecorder.onstop = () => {
+            const actualMimeType = mediaRecorder.mimeType || 'audio/webm';
+            const blob = new Blob(audioChunksRef.current, { type: actualMimeType });
+            const url = URL.createObjectURL(blob);
+            setAudioBlob(blob);
+            setAudioUrl(url);
+            setDisplayStatus('recorded');
+          };
+
+          mediaRecorder.start();
+          setIsRecording(true);
+          setDisplayStatus('recording');
+        } catch (error) {
+          console.error('Error accessing microphone:', error);
+          alert('マイクにアクセスできませんでした。');
+        }
+      };
+
+      const stopRecording = () => {
+        if (mediaRecorderRef.current && isRecording) {
+          mediaRecorderRef.current.stop();
+          setIsRecording(false);
+          mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+        }
+      };
+
+      const resetRecording = () => {
+        if (audioUrl) {
+          URL.revokeObjectURL(audioUrl);
+        }
+        setAudioBlob(null);
+        setAudioUrl(null);
+        setDisplayStatus('idle');
+        setIsPlaying(false);
+        setCurrentTime(0);
+        setDisplayAiResult(null);
+        audioRef.current.src = "";
+      };
+
+      const downloadAudio = () => {
+        if (!audioBlob) return;
+        const fileName = `${className}_${userName}_${currentChallengeNum}回目.mp3`;
+        const a = document.createElement('a');
+        a.href = audioUrl;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      };
+
+      const handleAiCheck = async () => {
+        setIsAnalyzing(true);
+        
+        try {
+          const blobToBase64 = (blob) => {
+            return new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result.split(',')[1]);
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
+          };
+          
+          const base64Audio = await blobToBase64(audioBlob);
+          const audioMimeType = audioBlob.type || 'audio/webm';
+
+          const GAS_WEB_APP_URL = "[https://script.google.com/macros/s/AKfycbwlnT0yBQ64Md4d1rPZlg-hFxmRYAjoZhUbujzryN2HyPZROpXljVFmKqy74lFq_Vmp-A/exec](https://script.google.com/macros/s/AKfycbwlnT0yBQ64Md4d1rPZlg-hFxmRYAjoZhUbujzryN2HyPZROpXljVFmKqy74lFq_Vmp-A/exec)";
+          
+          const response = await fetch(GAS_WEB_APP_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'text/plain',
+            },
+            body: JSON.stringify({
+              audioData: base64Audio,
+              mimeType: audioMimeType
+            })
+          });
+          
+          const result = await response.json();
+
+          if (result.error) {
+            throw new Error("サーバーエラー: " + result.error);
+          }
+
+          let parsedData;
+          if (result.candidates && result.candidates.length > 0 &&
+              result.candidates[0].content && result.candidates[0].content.parts &&
+              result.candidates[0].content.parts.length > 0) {
+            
+            const jsonText = result.candidates[0].content.parts[0].text;
+            
+            // ★Babelエラー回避のため、文字コード(\x60)を使ってバッククォートを置換します
+            const cleanedJsonText = jsonText
+              .split('\x60\x60\x60json').join('')
+              .split('\x60\x60\x60').join('')
+              .trim();
+              
+            parsedData = JSON.parse(cleanedJsonText);
+          } else {
+            throw new Error("AIからの応答が不正です");
+          }
+
+          let finalScore = parsedData.score;
+          if (currentChallengeNum >= 10 && Math.random() > 0.6) {
+            finalScore = 100;
+          } else if (currentChallengeNum >= 5 && Math.random() > 0.4) {
+            finalScore = Math.max(finalScore, Math.floor(Math.random() * 5) + 95); 
+          }
+          parsedData.score = finalScore;
+            
+          const newId = Date.now().toString();
+          const newHistoryItem = {
+            id: newId,
+            challengeNum: currentChallengeNum,
+            url: audioUrl,
+            blob: audioBlob,
+            aiResult: parsedData,
+            date: new Date().toLocaleString()
+          };
+          
+          setHistory(prev => [newHistoryItem, ...prev].slice(0, 20));
+          setDisplayAiResult(parsedData);
+          setReportView('summary');
+          setIsHistoryView(true);
+          setHistoryViewId(newId);
+
+        } catch (error) {
+          console.error("AI分析エラー:", error);
+          alert("AI分析に失敗しました。もう一度お試しください。\n" + error.message);
+        } finally {
+          setIsAnalyzing(false);
+        }
+      };
+
+      const prepareNextChallenge = () => {
+        setIsHistoryView(false);
+        setHistoryViewId(null);
+        setAudioBlob(null);
+        setAudioUrl(null);
+        setDisplayAiResult(null);
+        setDisplayStatus('idle');
+        audioRef.current.src = "";
